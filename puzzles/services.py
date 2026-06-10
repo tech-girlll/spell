@@ -134,3 +134,42 @@ def calculate_points(solved: bool, guesses_used: int) -> int:
     if not solved:
         return POINTS_ON_FAIL
     return POINTS_BY_GUESS_COUNT.get(guesses_used, POINTS_ON_FAIL)
+# ----------------------------------------------------------------------------
+# Daily puzzle
+# ----------------------------------------------------------------------------
+
+def get_or_create_daily_puzzle() -> Optional[Puzzle]:
+    """
+    Return today's daily puzzle, creating it if it doesn't exist yet.
+
+    Lazy creation: the first player to request the daily each day triggers
+    its creation. The unique constraint on daily_date prevents duplicates
+    if two requests race — the loser of the race fetches the winner's puzzle.
+    """
+    from django.db import IntegrityError
+    from django.utils import timezone
+
+    today = timezone.localdate()
+
+    existing = Puzzle.objects.filter(is_daily=True, daily_date=today).first()
+    if existing:
+        return existing
+
+    # Pick a word that has never been a daily before
+    word = (
+        Word.objects.exclude(definition="")
+        .exclude(puzzles__is_daily=True)
+        .order_by("?")
+        .first()
+    )
+    if word is None:
+        word = Word.objects.exclude(definition="").order_by("?").first()
+    if word is None:
+        return None  # no enriched words at all
+
+    try:
+        return Puzzle.objects.create(word=word, is_daily=True, daily_date=today)
+    except IntegrityError:
+        # Another request created it between our check and create — use theirs
+        return Puzzle.objects.filter(is_daily=True, daily_date=today).first()
+    

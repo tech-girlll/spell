@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Daily Puzzle — Spell</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 480px; margin: 2rem auto; padding: 1rem; color: #1a1a1a; }
+        h1 { margin: 0; }
+        .daily-date { font-size: 0.85rem; color: #888; margin-bottom: 1rem; }
+        .definition { background: #f5f5f5; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; line-height: 1.5; }
+        .grid { display: flex; flex-direction: column; gap: 6px; margin-bottom: 1.5rem; align-items: center; }
+        .row { display: flex; gap: 6px; }
+        .cell { width: 50px; height: 50px; border: 2px solid #d3d6da; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; font-weight: 600; text-transform: uppercase; }
+        .cell.G { background: #6aaa64; color: white; border-color: #6aaa64; }
+        .cell.Y { background: #c9b458; color: white; border-color: #c9b458; }
+        .cell.B { background: #787c7e; color: white; border-color: #787c7e; }
+        form { display: flex; gap: 8px; }
+        input[type="text"] { flex: 1; padding: 0.6rem; font-size: 1rem; border: 1px solid #ccc; border-radius: 4px; text-transform: uppercase; }
+        button { padding: 0.6rem 1.2rem; font-size: 1rem; background: #1a1a1a; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #333; }
+        .meta { color: #666; font-size: 0.9rem; margin-bottom: 1rem; }
+        .errors { background: #ffebee; color: #b71c1c; padding: 0.8rem 1rem; border-radius: 4px; margin-bottom: 1rem; }
+        .celebration { background: #e8f5e9; border: 2px solid #6aaa64; padding: 1.5rem 1rem; border-radius: 8px; text-align: center; margin-bottom: 1.5rem; animation: pop 0.4s ease-out; }
+        .game-over { background: #ffebee; border: 2px solid #c62828; padding: 1.5rem 1rem; border-radius: 8px; text-align: center; margin-bottom: 1.5rem; }
+        .big-icon { font-size: 3rem; margin-bottom: 0.4rem; }
+        .big-text { font-size: 1.4rem; font-weight: 600; margin-bottom: 0.3rem; }
+        .sub-text { color: #555; font-size: 0.95rem; }
+        .come-back { text-align: center; color: #666; margin-top: 1.5rem; }
+        .nav-link { display: inline-block; margin-top: 1rem; color: #1a1a1a; }
+        @keyframes pop {
+            0% { transform: scale(0.8); opacity: 0; }
+            60% { transform: scale(1.05); opacity: 1; }
+            100% { transform: scale(1); }
+        }
+    </style>
+</head>
+<body>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.3rem;">
+        <h1>Daily Puzzle</h1>
+        <div style="display: flex; gap: 1rem; font-size: 0.9rem; color: #555;">
+            <span title="Current streak">🔥 {{ current_streak }}</span>
+            <span title="Total points">⭐ {{ total_points }}</span>
+        </div>
+    </div>
+    <div class="daily-date">{{ daily_date }}</div>
+
+    {% if messages %}
+        <div class="errors">
+            {% for message in messages %}
+                {{ message }}
+            {% endfor %}
+        </div>
+    {% endif %}
+
+    <div class="definition">
+        <strong>Definition:</strong> {{ definition }}
+    </div>
+
+    <p class="meta">
+        {{ word_length }} letters &middot; {{ guesses_remaining }} of {{ max_guesses }} guesses left
+    </p>
+
+    <div class="grid">
+        {% for attempt in attempts %}
+            <div class="row">
+                {% for letter in attempt.user_input %}
+                    <div class="cell {{ attempt.evaluation|slice:forloop.counter0|slice:":1" }}">{{ letter }}</div>
+                {% endfor %}
+            </div>
+        {% endfor %}
+
+        {% for _ in guesses_remaining|rjust:guesses_remaining %}
+            <div class="row">
+                {% for _ in word_length|rjust:word_length %}
+                    <div class="cell"></div>
+                {% endfor %}
+            </div>
+        {% endfor %}
+    </div>
+
+    {% if result %}
+        {% if result.solved %}
+            <div class="celebration">
+                <div class="big-icon">🎉</div>
+                <div class="big-text">You got it!</div>
+                <div class="sub-text">Solved in {{ result.guesses_used }} {{ result.guesses_used|pluralize:"guess,guesses" }} &middot; +{{ result.points_earned }} points</div>
+            </div>
+        {% else %}
+            <div class="game-over">
+                <div class="big-icon">💔</div>
+                <div class="big-text">Out of guesses</div>
+                <div class="sub-text">The word is revealed below.</div>
+            </div>
+        {% endif %}
+
+        <div style="background: #f5f5f5; padding: 1rem; border-radius: 8px;">
+            <div style="font-size: 1.5rem; font-weight: 600; margin-bottom: 0.4rem;">
+                {{ reveal_word|upper }}
+                {% if reveal_audio %}
+                    <a href="{{ reveal_audio }}" target="_blank" style="font-size: 1rem; margin-left: 0.6rem;">🔊</a>
+                {% endif %}
+            </div>
+            {% if reveal_pos %}
+                <div style="color: #666; font-style: italic; margin-bottom: 0.6rem;">{{ reveal_pos }}</div>
+            {% endif %}
+            <div style="margin-bottom: 0.6rem;">{{ definition }}</div>
+            {% if reveal_example %}
+                <div style="color: #555; font-style: italic;">"{{ reveal_example }}"</div>
+            {% endif %}
+        </div>
+
+        <div class="come-back">
+            Come back tomorrow for a new word.
+            <br>
+            <a href="{% url 'puzzles:play' %}" class="nav-link">Keep playing endless mode →</a>
+        </div>
+    {% else %}
+        <form method="post" action="">
+            {% csrf_token %}
+            <input type="text" name="guess" maxlength="{{ word_length }}" minlength="{{ word_length }}" autofocus autocomplete="off" required>
+            <button type="submit">Guess</button>
+        </form>
+    {% endif %}
+</body>
+</html>

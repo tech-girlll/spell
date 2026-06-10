@@ -15,11 +15,17 @@ Notes:
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import redirect, render
-
+from progress.models import Streak
 from words.models import Word
 
 from .models import Attempt, Puzzle, PuzzleResult
-from .services import calculate_points, evaluate_guess, is_valid_guess
+from .services import (
+    calculate_points,
+    evaluate_guess,
+    get_or_create_daily_puzzle,
+    is_valid_guess,
+)
+
 
 ROUND_SIZE = 10
 
@@ -76,7 +82,90 @@ def round_summary(request):
         "total_points": total_points,
     }
     return render(request, "puzzles/round_summary.html", context)
+@login_required
+def daily(request):
+    """Today's shared daily puzzle — same word for every player."""
+    puzzle = get_or_create_daily_puzzle()
+    if puzzle is None:
+        messages.error(request, "No words available for today's puzzle.")
+        return redirect("puzzles:play")
 
+    if request.method == "POST":
+        return _process_daily_guess(request, puzzle)
+
+    return _render_daily(request, puzzle)
+
+
+def _render_daily(request, puzzle: Puzzle):
+    """Render the daily puzzle page."""
+    attempts = Attempt.objects.filter(
+        user=request.user,
+        puzzle=puzzle,
+    ).order_by("guess_number")
+
+    result = PuzzleResult.objects.filter(user=request.user, puzzle=puzzle).first()
+    streak = Streak.objects.filter(user=request.user).first()
+
+    context = {
+        "puzzle_id": puzzle.id,
+        "word_length": puzzle.word.length,
+        "definition": puzzle.word.definition,
+        "max_guesses": puzzle.max_guesses,
+        "attempts": attempts,
+        "result": result,
+        "guesses_remaining": puzzle.max_guesses - attempts.count(),
+        "current_streak": streak.current_streak if streak else 0,
+        "total_points": streak.total_points if streak else 0,
+        "daily_date": puzzle.daily_date,
+        "reveal_word": puzzle.word.text if result else None,
+        "reveal_audio": puzzle.word.audio_url if result else None,
+        "reveal_example": puzzle.word.example_sentence if result else None,
+        "reveal_pos": puzzle.word.part_of_speech if result else None,
+    }
+    return render(request, "puzzles/daily.html", context)
+
+
+def _process_daily_guess(request, puzzle: Puzzle):
+    """Validate, evaluate, and record a guess on the daily puzzle."""
+    guess = request.POST.get("guess", "").strip().lower()
+
+    if PuzzleResult.objects.filter(user=request.user, puzzle=puzzle).exists():
+        messages.error(request, "You've already played today's puzzle. Come back tomorrow!")
+        return redirect("puzzles:daily")
+
+    ok, error = is_valid_guess(guess, expected_length=puzzle.word.length)
+    if not ok:
+        messages.error(request, error)
+        return redirect("puzzles:daily")
+
+    existing_attempts = Attempt.objects.filter(user=request.user, puzzle=puzzle).count()
+    if existing_attempts >= puzzle.max_guesses:
+        messages.error(request, "No guesses remaining.")
+        return redirect("puzzles:daily")
+
+    evaluation = evaluate_guess(guess, puzzle.word.text)
+    is_correct = guess == puzzle.word.text.lower()
+
+    Attempt.objects.create(
+        user=request.user,
+        puzzle=puzzle,
+        guess_number=existing_attempts + 1,
+        user_input=guess,
+        is_correct=is_correct,
+        evaluation=evaluation,
+    )
+
+    guesses_used = existing_attempts + 1
+    if is_correct or guesses_used >= puzzle.max_guesses:
+        PuzzleResult.objects.create(
+            user=request.user,
+            puzzle=puzzle,
+            solved=is_correct,
+            guesses_used=guesses_used,
+            points_earned=calculate_points(is_correct, guesses_used),
+        )
+
+    return redirect("puzzles:daily")
 
 def _render_play(request, puzzle: Puzzle):
     """Render the play page with current puzzle state."""
