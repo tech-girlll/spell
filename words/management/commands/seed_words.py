@@ -1,57 +1,102 @@
 """
-Seed the Word table with a starter list of words.
+Seed the Word table from a wordlist file.
+
+The file should contain one word per line, ordered by frequency
+(most common first). Frequency rank is used to grade difficulty.
 
 Usage:
-    python manage.py seed_words
-
-Safe to run multiple times — uses get_or_create so it won't duplicate.
+    python manage.py seed_words                      # default file, max 2000 words
+    python manage.py seed_words --max 5000           # seed more
+    python manage.py seed_words --file path/to.txt   # custom file
 """
-from django.core.management.base import BaseCommand
+from pathlib import Path
+
+from django.core.management.base import BaseCommand, CommandError
 
 from words.models import Word
 
+DEFAULT_WORDLIST = Path(__file__).resolve().parent.parent.parent / "data" / "wordlist.txt"
 
-# (word, difficulty_level)
-STARTER_WORDS = [
-    # Very easy — 1
-    ("cat", 1), ("dog", 1), ("sun", 1), ("hat", 1), ("run", 1),
-    ("red", 1), ("big", 1), ("egg", 1), ("box", 1), ("cup", 1),
+# Filters
+MIN_LENGTH = 3
+MAX_LENGTH = 12
 
-    # Easy — 2
-    ("apple", 2), ("happy", 2), ("water", 2), ("bread", 2), ("smile", 2),
-    ("table", 2), ("green", 2), ("paper", 2), ("music", 2), ("river", 2),
 
-    # Medium — 3
-    ("receive", 3), ("believe", 3), ("compute", 3), ("animal", 3), ("rhythm", 3),
-    ("anxiety", 3), ("village", 3), ("forest", 3), ("travel", 3), ("planet", 3),
+def grade_difficulty(rank: int, total: int) -> int:
+    """
+    Map frequency rank to difficulty 1-5.
 
-    # Hard — 4
-    ("conscience", 4), ("necessary", 4), ("separate", 4), ("argument", 4),
-    ("definitely", 4), ("occurrence", 4), ("embarrass", 4), ("knowledge", 4),
-    ("vacuum", 4), ("rhetoric", 4),
-
-    # Very hard — 5
-    ("photosynthesis", 5), ("conscientious", 5), ("entrepreneur", 5),
-    ("onomatopoeia", 5), ("perseverance", 5), ("sycophant", 5),
-    ("obsequious", 5), ("ephemeral", 5), ("ubiquitous", 5), ("paradigm", 5),
-]
+    The most common words are easiest; the rarest are hardest.
+    Cutoffs are proportional to the size of the list.
+    """
+    fraction = rank / total
+    if fraction < 0.10:
+        return 1
+    if fraction < 0.30:
+        return 2
+    if fraction < 0.60:
+        return 3
+    if fraction < 0.85:
+        return 4
+    return 5
 
 
 class Command(BaseCommand):
-    help = "Seed the database with a starter list of words."
+    help = "Seed the database with words from a frequency-ranked wordlist file."
+
+    def add_arguments(self, parser):
+        parser.add_argument(
+            "--file",
+            type=str,
+            default=str(DEFAULT_WORDLIST),
+            help="Path to wordlist file (one word per line, frequency-ordered).",
+        )
+        parser.add_argument(
+            "--max",
+            type=int,
+            default=2000,
+            help="Maximum number of words to seed (after filtering).",
+        )
 
     def handle(self, *args, **options):
+        path = Path(options["file"])
+        max_words = options["max"]
+
+        if not path.exists():
+            raise CommandError(f"Wordlist file not found: {path}")
+
+        raw_words = path.read_text().splitlines()
+        total_raw = len(raw_words)
+
+        # Filter junk
+        candidates = []
+        for w in raw_words:
+            w = w.strip().lower()
+            if not w.isalpha():
+                continue  # skip anything with digits, hyphens, apostrophes
+            if not (MIN_LENGTH <= len(w) <= MAX_LENGTH):
+                continue
+            candidates.append(w)
+            if len(candidates) >= max_words:
+                break
+
+        self.stdout.write(
+            f"Read {total_raw} lines, {len(candidates)} usable words after filtering "
+            f"(letters only, {MIN_LENGTH}-{MAX_LENGTH} chars, max {max_words})."
+        )
+
         created_count = 0
         skipped_count = 0
+        total = len(candidates)
 
-        for text, difficulty in STARTER_WORDS:
+        for rank, text in enumerate(candidates):
+            difficulty = grade_difficulty(rank, total)
             _, created = Word.objects.get_or_create(
-                text=text.lower(),
+                text=text,
                 defaults={"difficulty_level": difficulty},
             )
             if created:
                 created_count += 1
-                self.stdout.write(self.style.SUCCESS(f"  + {text}"))
             else:
                 skipped_count += 1
 
@@ -60,4 +105,7 @@ class Command(BaseCommand):
             self.style.SUCCESS(
                 f"Done. Created {created_count}, skipped {skipped_count} (already existed)."
             )
+        )
+        self.stdout.write(
+            "Next: run 'python manage.py enrich_words --delay 1.0' to fetch dictionary data."
         )
