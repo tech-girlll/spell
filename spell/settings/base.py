@@ -10,6 +10,10 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+LOGIN_URL = "accounts:login"
+LOGIN_REDIRECT_URL = "puzzles:play"
+LOGOUT_REDIRECT_URL = "accounts:login"
+
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.

@@ -33,12 +33,17 @@
     </style>
 </head>
 <body>
-    <h1>Spell</h1>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+        <h1 style="margin: 0;">Spell</h1>
+        <div style="display: flex; gap: 1rem; font-size: 0.9rem; color: #555;">
+            <span title="Current streak">🔥 {{ current_streak }}</span>
+            <span title="Total points">⭐ {{ total_points }}</span>
+        </div>
+    </div>
 
     <div class="round-meta">
         Word {{ round_progress|add:1 }} of {{ round_size }} in this round
     </div>
-
     {% if messages %}
         <div class="errors">
             {% for message in messages %}
